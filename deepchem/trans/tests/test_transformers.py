@@ -69,6 +69,43 @@ def load_unlabelled_data():
   return loader.featurize(input_file)
 
 
+def test_featurization_transformer():
+  fp_size = 2048
+  tasks, all_dataset, transformers = load_delaney('Raw')
+  train = all_dataset[0]
+  transformer = FeaturizationTransformer(
+      transform_X=True,
+      dataset=train,
+      featurizer=dc.feat.CircularFingerprint(size=fp_size))
+  new_train = transformer.transform(train)
+
+  assert new_train.y.shape == train.y.shape
+  assert new_train.X.shape[-1] == fp_size
+
+
+def test_DAG_transformer():
+  """Tests the DAG transformer."""
+  np.random.seed(123)
+  tf.random.set_seed(123)
+  n_tasks = 1
+
+  # Load mini log-solubility dataset.
+  current_dir = os.path.dirname(os.path.abspath(__file__))
+  featurizer = dc.feat.ConvMolFeaturizer()
+  tasks = ["outcome"]
+  input_file = os.path.join(current_dir,
+                            "../../models/tests/example_regression.csv")
+  loader = dc.data.CSVLoader(
+      tasks=tasks, smiles_field="smiles", featurizer=featurizer)
+  dataset = loader.create_dataset(input_file)
+  transformer = dc.trans.DAGTransformer(max_atoms=50)
+  dataset = transformer.transform(dataset)
+  # The transformer generates n DAGs for a molecule with n
+  # atoms. These are denoted the "parents"
+  for idm, mol in enumerate(dataset.X):
+    assert dataset.X[idm].get_num_atoms() == len(dataset.X[idm].parents)
+
+
 class TestTransformers(unittest.TestCase):
   """
   Test top-level API for transformer objects.
@@ -474,19 +511,6 @@ class TestTransformers(unittest.TestCase):
     assert np.allclose(test_dataset_trans.X[0, 10:20], [0] * 10)
     assert not np.isclose(dataset_trans.X[0, 0], 1.)
 
-  def test_featurization_transformer(self):
-    fp_size = 2048
-    tasks, all_dataset, transformers = load_delaney('Raw')
-    train = all_dataset[0]
-    transformer = FeaturizationTransformer(
-        transform_X=True,
-        dataset=train,
-        featurizer=dc.feat.CircularFingerprint(size=fp_size))
-    new_train = transformer.transform(train)
-
-    self.assertEqual(new_train.y.shape, train.y.shape)
-    self.assertEqual(new_train.X.shape[-1], fp_size)
-
   def test_blurring(self):
     # Check Blurring
     dt = DataTransforms(self.d)
@@ -592,27 +616,6 @@ class TestTransformers(unittest.TestCase):
     np.random.seed(0)
     check_random_noise = dt.salt_pepper_noise(prob, salt=255, pepper=0)
     assert np.allclose(random_noise, check_random_noise)
-
-  def test_DAG_transformer(self):
-    """Tests the DAG transformer."""
-    np.random.seed(123)
-    tf.random.set_seed(123)
-    n_tasks = 1
-
-    # Load mini log-solubility dataset.
-    featurizer = dc.feat.ConvMolFeaturizer()
-    tasks = ["outcome"]
-    input_file = os.path.join(self.current_dir,
-                              "../../models/tests/example_regression.csv")
-    loader = dc.data.CSVLoader(
-        tasks=tasks, smiles_field="smiles", featurizer=featurizer)
-    dataset = loader.create_dataset(input_file)
-    transformer = dc.trans.DAGTransformer(max_atoms=50)
-    dataset = transformer.transform(dataset)
-    # The transformer generates n DAGs for a molecule with n
-    # atoms. These are denoted the "parents"
-    for idm, mol in enumerate(dataset.X):
-      assert dataset.X[idm].get_num_atoms() == len(dataset.X[idm].parents)
 
   def test_median_filter(self):
     #Check median filter
